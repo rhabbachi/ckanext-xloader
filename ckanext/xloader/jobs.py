@@ -157,7 +157,8 @@ def xloader_data_into_datastore_(input, job_dict):
                                                   logger)
 
     if (resource.get('hash') == file_hash
-            and not data.get('ignore_hash')):
+            and not asbool(config.get(
+        'ckanext.xloader.ignore_hash', False))):
         logger.info('Ignoring resource - the file hash hasn\'t changed: '
                     '{hash}.'.format(hash=file_hash))
         return
