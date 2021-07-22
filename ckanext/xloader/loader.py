@@ -7,10 +7,12 @@ import os.path
 import tempfile
 import itertools
 import csv
+import locale
 
 import six
 import psycopg2
 import messytables
+from messytables.compat23 import izip_longest
 from unidecode import unidecode
 
 import ckan.plugins as p
@@ -34,6 +36,12 @@ else:
         return _get_engine(data_dict)
     import ckanext.datastore.db as datastore_db
 
+# PNO Edit: support current locales.
+if locale.getdefaultlocale()[0]:
+    lang, encoding = locale.getdefaultlocale()
+    locale.setlocale(locale.LC_ALL, locale=(lang, encoding))
+else:
+    locale.setlocale(locale.LC_ALL, '')
 
 create_indexes = datastore_db.create_indexes
 _drop_indexes = datastore_db._drop_indexes
@@ -322,7 +330,7 @@ def load_table(table_filepath, resource_id, mimetype='text/csv', logger=None):
                 }.get(existing_info.get(h, {}).get('type_override'), t)
                 for t, h in zip(types, headers)]
 
-        row_set.register_processor(messytables.types_processor(types))
+        row_set.register_processor(types_processor(types))
 
         headers = [header.strip()[:MAX_COLUMN_LENGTH] for header in headers if header.strip()]
         headers_set = set(headers)
@@ -576,3 +584,30 @@ def literal_string(s):
 
 # end of datastore copied code #
 ################################
+
+# Edit PNO
+def types_processor(types, strict=False):
+    """ Apply the column types set on the instance to the
+    current row, attempting to cast each cell to the specified
+    type.
+    Strict means that casting errors are not ignored"""
+    def apply_types(row_set, row):
+        if types is None:
+            return row
+        for cell, type in izip_longest(row, types):
+            # Use locales to get the correct type casting from string.
+            cellvalue = cell.value
+
+            if isinstance(type, messytables.IntegerType):
+                cellvalue = locale.atoi(unidecode(cell.value))
+            elif isinstance(type, messytables.DecimalType):
+                cellvalue = locale.atof(unidecode(cell.value))
+
+            try:
+                cell.value = type.cast(cellvalue)
+                cell.type = type
+            except Exception:
+                if strict and type:
+                    raise
+        return row
+    return apply_types
